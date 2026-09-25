@@ -1,0 +1,250 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Multi-tenant / SaaS Facility model (e.g. Al Nahda Boys School Sports Complex)
+model Facility {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  slug        String   @unique
+  address     String?
+  city        String   @default("Sharjah")
+  country     String   @default("UAE")
+  currency    String   @default("AED")
+  timezone    String   @default("Asia/Dubai")
+  phone       String?
+  email       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admins      Admins[]
+  courtTypes  CourtTypes[]
+  courts      Courts[]
+  bookings    Bookings[]
+  pricing     Pricing[]
+
+  @@index([slug])
+}
+
+model Admins {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId   String?   @db.Uuid
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         String    @default("booking_admin") // super_admin, booking_admin, finance_admin, view_only
+  phone        String?
+  isActive     Boolean   @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  facility       Facility?         @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  sessions       Sessions[]
+  bookings       Bookings[]        @relation("AdminCreatedBookings")
+  cancellations  Cancellations[]
+  bookingLocks   BookingLocks[]
+  auditLogs      BookingAuditLog[]
+  loginLogs      LoginAuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@index([facilityId])
+}
+
+model Sessions {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId          String   @db.Uuid
+  refreshTokenHash String
+  isActive         Boolean  @default(true)
+  deviceInfo       Json?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  admin Admins @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+model CourtTypes {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId  String?  @db.Uuid
+  name        String   // Badminton, Basketball, Cricket, Pickleball
+  slug        String   // badminton, basketball, cricket, pickleball
+  description String?
+  createdAt   DateTime @default(now())
+
+  facility Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  courts   Courts[]
+  pricing  Pricing[]
+
+  @@unique([facilityId, name])
+  @@index([slug])
+}
+
+model Courts {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId  String?  @db.Uuid
+  courtNumber Int
+  courtTypeId String   @db.Uuid
+  name        String?  // Optional display name e.g. "Court 1 (Indoor)"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  facility  Facility?  @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  courtType CourtTypes @relation(fields: [courtTypeId], references: [id], onDelete: Cascade)
+  bookings  Bookings[]
+
+  @@unique([facilityId, courtTypeId, courtNumber])
+  @@index([courtTypeId])
+}
+
+model BookingStatuses {
+  id          Int     @id
+  name        String  @unique // PENDING, CONFIRMED, CANCELLED, COMPLETED, UNDER_BOOKING
+  description String?
+}
+
+model Bookings {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId       String?   @db.Uuid
+  courtId          String    @db.Uuid
+  bookingType      String    @default("one_time") // one_time, long_term
+  statusId         Int       @default(1) // 1=PENDING, 2=CONFIRMED, 3=CANCELLED, 4=COMPLETED, 5=UNDER_BOOKING
+  
+  // Concurrency & Lease Control
+  version          Int       @default(1) // Optimistic concurrency lock
+  lockedByAdminId  String?   @db.Uuid
+  lockExpiresAt    DateTime?
+
+  // Customer Contact Info
+  contactName      String
+  contactPhone     String
+  contactEmail     String?
+
+  // Schedule for Single Booking
+  bookingDate      DateTime? @db.Date
+  startTime        String?   // '18:00'
+  endTime          String?   // '19:00'
+
+  // Parent-Child Series Relation for Long-Term Recurring Bookings
+  parentBookingId  String?   @db.Uuid
+  recurringPattern Json?     // { frequency, daysOfWeek, startDate, endDate, blackoutDates }
+  longTermStartDate DateTime? @db.Date
+  longTermEndDate   DateTime? @db.Date
+
+  // Financials & Payment
+  amountDue        Decimal   @default(0) @db.Decimal(10, 2)
+  paymentMade      Boolean   @default(false)
+  paymentMethod    String?   // cash, card, bank_transfer
+  paymentDate      DateTime?
+  transactionId    String?
+  notes            String?
+
+  // Audit
+  createdByAdminId String    @db.Uuid
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  facility         Facility?         @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  court            Courts            @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  createdByAdmin   Admins            @relation("AdminCreatedBookings", fields: [createdByAdminId], references: [id])
+  parentBooking    Bookings?         @relation("BookingInstances", fields: [parentBookingId], references: [id], onDelete: Cascade)
+  childInstances   Bookings[]        @relation("BookingInstances")
+  locks            BookingLocks[]
+  cancellation     Cancellations?
+  auditLogs        BookingAuditLog[]
+
+  @@index([courtId, bookingDate])
+  @@index([statusId])
+  @@index([lockExpiresAt])
+  @@index([parentBookingId])
+  @@index([createdByAdminId])
+  @@index([facilityId])
+}
+
+model BookingLocks {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId  String    @db.Uuid
+  adminId    String    @db.Uuid
+  lockedAt   DateTime  @default(now())
+  unlockedAt DateTime?
+  action     String    // locked, unlocked, expired, confirmed
+
+  booking Bookings @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  admin   Admins   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([adminId])
+}
+
+model Cancellations {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId          String    @unique @db.Uuid
+  cancelledByAdminId String    @db.Uuid
+  cancellationReason String?
+  refundAmount       Decimal   @default(0) @db.Decimal(10, 2)
+  refundProcessed    Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  booking          Bookings @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  cancelledByAdmin Admins   @relation(fields: [cancelledByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model BookingAuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId String   @db.Uuid
+  adminId   String?  @db.Uuid
+  action    String   // created, locked, unlocked, confirmed, cancelled, rescheduled
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  timestamp DateTime @default(now())
+
+  booking Bookings @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  admin   Admins?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([timestamp])
+}
+
+model LoginAuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId    String?  @db.Uuid
+  email      String
+  success    Boolean
+  deviceInfo Json?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  admin Admins? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([timestamp])
+}
+
+model Pricing {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId  String?  @db.Uuid
+  courtTypeId String   @db.Uuid
+  dayType     String   // weekday, weekend, all
+  startTime   String   // '08:00'
+  endTime     String   // '23:00'
+  ratePerHour Decimal  @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  facility  Facility?  @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  courtType CourtTypes @relation(fields: [courtTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, courtTypeId, dayType, startTime, endTime])
+}
