@@ -16,7 +16,12 @@ router.put('/confirm/:id', authenticate, requirePermission('bookings:create'), B
 router.post('/cancel/:id', authenticate, requirePermission('bookings:cancel'), BookingController.cancelBooking);
 
 // Recurring Series
+router.get('/recurring', authenticate, BookingController.getRecurringSeries);
 router.post('/recurring/evaluate', authenticate, requirePermission('bookings:create'), BookingController.evaluateRecurring);
 router.post('/recurring/create', authenticate, requirePermission('bookings:create'), BookingController.createRecurring);
+router.post('/recurring/:id/cancel', authenticate, requirePermission('bookings:cancel'), BookingController.cancelRecurringSeries);
+router.put('/recurring/:id/payment', authenticate, requirePermission('bookings:create'), BookingController.updateRecurringPayment);
 
 export default router;
+
+

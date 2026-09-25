@@ -51,3 +51,5 @@ coverage/
 scratch/
 tmp/
 temp/
+server/src/generated/
+

@@ -21,13 +21,21 @@ interface NexCourtDB extends DBSchema {
       retryCount: number;
     };
   };
+  customers_cache: {
+    key: string;
+    value: {
+      id: string;
+      list: any[];
+      cachedAt: number;
+    };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<NexCourtDB>> | null = null;
 
 export function getOfflineDB() {
   if (!dbPromise) {
-    dbPromise = openDB<NexCourtDB>('nexcourt_db_v1', 1, {
+    dbPromise = openDB<NexCourtDB>('nexcourt_db_v2', 2, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('schedule_cache')) {
           db.createObjectStore('schedule_cache', { keyPath: 'date' });
@@ -35,10 +43,37 @@ export function getOfflineDB() {
         if (!db.objectStoreNames.contains('offline_queue')) {
           db.createObjectStore('offline_queue', { keyPath: 'id' });
         }
+        if (!db.objectStoreNames.contains('customers_cache')) {
+          db.createObjectStore('customers_cache', { keyPath: 'id' });
+        }
       }
     });
   }
   return dbPromise;
+}
+
+export async function cacheCustomers(customers: any[]) {
+  try {
+    const db = await getOfflineDB();
+    await db.put('customers_cache', {
+      id: 'all',
+      list: customers,
+      cachedAt: Date.now()
+    });
+  } catch (err) {
+    console.error('Failed to cache customers in IndexedDB:', err);
+  }
+}
+
+export async function getCachedCustomers(): Promise<any[] | null> {
+  try {
+    const db = await getOfflineDB();
+    const entry = await db.get('customers_cache', 'all');
+    return entry?.list || null;
+  } catch (err) {
+    console.error('Failed to read customers from IndexedDB:', err);
+    return null;
+  }
 }
 
 export async function cacheSchedule(date: string, data: any) {

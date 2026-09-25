@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/client/index.js';
 import bcryptjs from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -62,10 +62,10 @@ async function main() {
 
   // 4. Seed Court Types and Courts
   const courtConfigs = [
-    { name: 'Badminton', slug: 'badminton', count: 4, weekdayRate: 60, weekendRate: 80 },
-    { name: 'Basketball', slug: 'basketball', count: 2, weekdayRate: 150, weekendRate: 200 },
-    { name: 'Cricket', slug: 'cricket', count: 1, weekdayRate: 200, weekendRate: 250 },
-    { name: 'Pickleball', slug: 'pickleball', count: 2, weekdayRate: 70, weekendRate: 90 }
+    { name: 'Badminton', slug: 'badminton', prefix: 'BMC', count: 6, weekdayRate: 60, weekendRate: 80 },
+    { name: 'Basketball', slug: 'basketball', prefix: 'BBC', count: 3, weekdayRate: 150, weekendRate: 200 },
+    { name: 'Cricket', slug: 'cricket', prefix: 'CRC', count: 1, weekdayRate: 200, weekendRate: 250 },
+    { name: 'Pickleball', slug: 'pickleball', prefix: 'PBC', count: 6, weekdayRate: 70, weekendRate: 90 }
   ];
 
   for (const config of courtConfigs) {
@@ -76,7 +76,7 @@ async function main() {
           name: config.name
         }
       },
-      update: {},
+      update: { slug: config.slug },
       create: {
         facilityId: facility.id,
         name: config.name,
@@ -87,6 +87,7 @@ async function main() {
 
     // Seed individual courts
     for (let i = 1; i <= config.count; i++) {
+      const courtName = `${config.prefix}${i}`;
       await prisma.courts.upsert({
         where: {
           facilityId_courtTypeId_courtNumber: {
@@ -95,12 +96,12 @@ async function main() {
             courtNumber: i
           }
         },
-        update: {},
+        update: { name: courtName, isActive: true },
         create: {
           facilityId: facility.id,
           courtTypeId: courtType.id,
           courtNumber: i,
-          name: `${config.name} Court ${i}`,
+          name: courtName,
           isActive: true
         }
       });

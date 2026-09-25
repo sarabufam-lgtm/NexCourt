@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Clock, AlertTriangle, CheckCircle, CreditCard, Banknote } from 'lucide-react';
 import { SlotItem, CourtMatrixItem } from './CourtGrid';
+import { CustomerCombobox } from './CustomerCombobox';
 
 interface SlotLockModalProps {
   court: CourtMatrixItem;
@@ -149,14 +150,15 @@ export const SlotLockModal: React.FC<SlotLockModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Customer Name *</label>
-              <input
-                type="text"
-                required
+              <CustomerCombobox
                 value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="e.g. Rashid Al Nuaimi"
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700/80 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                phone={contactPhone}
+                email={contactEmail}
+                onChange={({ name, phone: autoPhone, email: autoEmail }) => {
+                  setContactName(name);
+                  if (autoPhone) setContactPhone(autoPhone);
+                  if (autoEmail) setContactEmail(autoEmail);
+                }}
               />
             </div>
             <div>

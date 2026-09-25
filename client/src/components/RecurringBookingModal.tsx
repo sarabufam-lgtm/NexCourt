@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Calendar, AlertTriangle, CheckCircle, ArrowRight, ShieldAlert } from 'lucide-react';
 import { api } from '../api/client';
 import { CourtMatrixItem } from './CourtGrid';
+import { CustomerCombobox } from './CustomerCombobox';
 
 interface RecurringBookingModalProps {
   courts: CourtMatrixItem[];
@@ -233,14 +234,15 @@ export const RecurringBookingModal: React.FC<RecurringBookingModalProps> = ({
             {/* Customer Contact */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Academy / Contact Name *</label>
-                <input
-                  type="text"
-                  required
+                <CustomerCombobox
                   value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  placeholder="e.g. Smash Badminton Academy"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700/80 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  phone={contactPhone}
+                  email={contactEmail}
+                  onChange={({ name, phone: autoPhone, email: autoEmail }) => {
+                    setContactName(name);
+                    if (autoPhone) setContactPhone(autoPhone);
+                    if (autoEmail) setContactEmail(autoEmail);
+                  }}
                 />
               </div>
               <div>

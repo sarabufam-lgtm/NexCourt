@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/client"
 }
 
 // Multi-tenant / SaaS Facility model (e.g. Al Nahda Boys School Sports Complex)
@@ -28,6 +29,7 @@ model Facility {
   courts      Courts[]
   bookings    Bookings[]
   pricing     Pricing[]
+  customers   Customer[]
 
   @@index([slug])
 }
@@ -124,7 +126,8 @@ model Bookings {
   lockedByAdminId  String?   @db.Uuid
   lockExpiresAt    DateTime?
 
-  // Customer Contact Info
+  // Customer Contact Info & Account Link
+  customerId       String?   @db.Uuid
   contactName      String
   contactPhone     String
   contactEmail     String?
@@ -155,6 +158,7 @@ model Bookings {
 
   facility         Facility?         @relation(fields: [facilityId], references: [id], onDelete: SetNull)
   court            Courts            @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
   createdByAdmin   Admins            @relation("AdminCreatedBookings", fields: [createdByAdminId], references: [id])
   parentBooking    Bookings?         @relation("BookingInstances", fields: [parentBookingId], references: [id], onDelete: Cascade)
   childInstances   Bookings[]        @relation("BookingInstances")
@@ -168,6 +172,7 @@ model Bookings {
   @@index([parentBookingId])
   @@index([createdByAdminId])
   @@index([facilityId])
+  @@index([customerId])
 }
 
 model BookingLocks {
@@ -248,3 +253,23 @@ model Pricing {
 
   @@unique([facilityId, courtTypeId, dayType, startTime, endTime])
 }
+
+model Customer {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  facilityId String?    @db.Uuid
+  name       String
+  phone      String
+  email      String?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  facility   Facility?  @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  bookings   Bookings[]
+
+  @@unique([facilityId, phone])
+  @@index([name])
+  @@index([phone])
+  @@index([facilityId])
+}
+

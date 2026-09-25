@@ -17,6 +17,9 @@ export interface SlotItem {
   bookingInfo: {
     bookingId: string;
     contactName: string;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
+    customerId?: string | null;
     paymentMade: boolean;
     amountDue: number;
     bookingType: string;
@@ -32,21 +35,25 @@ export interface CourtMatrixItem {
   slots: SlotItem[];
 }
 
-interface CourtGridProps {
+export interface CourtGridProps {
   courts: CourtMatrixItem[];
   currentAdminId?: string;
   onSlotClick: (court: CourtMatrixItem, slot: SlotItem) => void;
+  onConfirmedSlotClick?: (court: CourtMatrixItem, slot: SlotItem) => void;
+  isMobileView?: boolean;
 }
 
 export const CourtGrid: React.FC<CourtGridProps> = ({
   courts,
   currentAdminId,
-  onSlotClick
+  onSlotClick,
+  onConfirmedSlotClick,
+  isMobileView = false
 }) => {
   if (courts.length === 0) {
     return (
-      <div className="py-16 text-center text-slate-500">
-        No active courts available for the selected criteria.
+      <div className="py-16 text-center text-slate-500 font-semibold text-xs sm:text-sm">
+        No active courts available for the selected sport.
       </div>
     );
   }
@@ -54,35 +61,52 @@ export const CourtGrid: React.FC<CourtGridProps> = ({
   // Get distinct time slot labels from first court
   const timeLabels = courts[0]?.slots.map((s) => s.startTime) || [];
 
+  // When 6 courts or fewer (e.g. Badminton BMC1..BMC6), fit perfectly across screen width in ONE row
+  const fitsSingleScreen = courts.length <= 6;
+  const timeColWidth = isMobileView ? '44px' : '60px';
+  const gridTemplate = fitsSingleScreen
+    ? `${timeColWidth} repeat(${courts.length}, minmax(0, 1fr))`
+    : `${timeColWidth} repeat(${courts.length}, minmax(80px, 1fr))`;
+
   return (
-    <div className="w-full overflow-x-auto pb-4">
-      <div className="min-w-[760px] inline-block align-middle">
-        {/* Header Row: Court Names */}
-        <div className="grid grid-cols-[100px_repeat(auto-fit,minmax(140px,1fr))] gap-2 mb-2 sticky top-0 bg-slate-950/90 backdrop-blur z-10 py-1">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center justify-center">
+    <div className={`w-full ${fitsSingleScreen ? 'overflow-x-hidden' : 'overflow-x-auto'} pb-2 custom-scrollbar`}>
+      <div className={`w-full ${fitsSingleScreen ? '' : 'min-w-fit'} inline-block align-middle`}>
+        {/* Header Row: Court Names - Always 1 unified row, centered vertically and horizontally */}
+        <div
+          className="grid gap-1 sm:gap-1.5 mb-1.5 sticky top-0 bg-slate-950/95 backdrop-blur z-10 py-1"
+          style={{ gridTemplateColumns: gridTemplate }}
+        >
+          {/* Time Header */}
+          <div className="h-10 sm:h-12 rounded-xl bg-slate-900/90 border border-slate-800 text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-400 flex items-center justify-center text-center shadow-sm">
             Time
           </div>
+
+          {/* Court Columns */}
           {courts.map((court) => (
             <div
               key={court.courtId}
-              className="px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-center shadow-sm"
+              className="h-10 sm:h-12 px-1 rounded-xl bg-slate-900 border border-slate-800 flex flex-col items-center justify-center text-center shadow-sm"
             >
-              <div className="text-sm font-bold text-slate-100">{court.courtName || `Court ${court.courtNumber}`}</div>
-              <div className="text-[11px] text-brand-400 font-medium capitalize">{court.courtType}</div>
+              <div className="text-xs sm:text-sm font-black text-slate-100 uppercase tracking-tight truncate w-full text-center">
+                {court.courtName || `C${court.courtNumber}`}
+              </div>
+              <div className="text-[9px] sm:text-[10px] text-brand-400 font-semibold capitalize truncate w-full text-center">
+                {court.courtType}
+              </div>
             </div>
           ))}
         </div>
 
         {/* Matrix Rows */}
-        <div className="space-y-2">
+        <div className="space-y-1 sm:space-y-1.5">
           {timeLabels.map((time, idx) => (
             <div
               key={time}
-              className="grid grid-cols-[100px_repeat(auto-fit,minmax(140px,1fr))] gap-2 items-center"
+              className="grid gap-1 sm:gap-1.5 items-center"
+              style={{ gridTemplateColumns: gridTemplate }}
             >
-              {/* Time Label Column */}
-              <div className="text-xs font-medium text-slate-400 bg-slate-900/50 rounded-lg py-2.5 px-2 text-center border border-slate-850 flex items-center justify-center space-x-1">
-                <Clock className="w-3 h-3 text-slate-500" />
+              {/* Time Label Column - Centered Vertically & Horizontally */}
+              <div className={`${isMobileView ? 'h-12' : 'h-16'} rounded-xl bg-slate-900/80 border border-slate-800/90 text-slate-300 font-mono font-bold text-[11px] sm:text-xs flex items-center justify-center text-center shadow-sm`}>
                 <span>{time}</span>
               </div>
 
@@ -96,60 +120,75 @@ export const CourtGrid: React.FC<CourtGridProps> = ({
                 const isAvailable = slot.status === 'AVAILABLE';
                 const isHeldByMe = isLocked && slot.lockInfo?.lockedByAdminId === currentAdminId;
 
+                const cellHeight = isMobileView ? 'h-12' : 'h-16';
+
                 return (
                   <button
                     key={`${court.courtId}-${slot.startTime}`}
-                    onClick={() => onSlotClick(court, slot)}
-                    disabled={isConfirmed || (isLocked && !isHeldByMe)}
-                    className={`h-14 rounded-xl px-2.5 py-1.5 text-left border transition-all relative overflow-hidden flex flex-col justify-between ${
+                    onClick={() => {
+                      if (isConfirmed) {
+                        onConfirmedSlotClick?.(court, slot);
+                      } else {
+                        onSlotClick(court, slot);
+                      }
+                    }}
+                    disabled={isLocked && !isHeldByMe}
+                    title={
                       isAvailable
-                        ? 'bg-slate-900/40 border-emerald-500/20 hover:border-emerald-500/60 hover:bg-emerald-500/10 cursor-pointer shadow-sm hover:shadow-emerald-500/10'
+                        ? `Available - Click to book ${court.courtName} at ${slot.startTime}`
+                        : isConfirmed
+                        ? `Booked by ${slot.bookingInfo?.contactName || 'Customer'} - Click to view or edit`
+                        : isHeldByMe
+                        ? 'Held by you - Click to confirm'
+                        : 'Slot currently held by another admin'
+                    }
+                    className={`${cellHeight} rounded-xl px-1 py-0.5 border text-center transition-all relative overflow-hidden flex flex-col items-center justify-center shadow-sm ${
+                      isAvailable
+                        ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 border-emerald-400 text-white cursor-pointer active:scale-95 shadow-emerald-950/30'
+                        : isConfirmed
+                        ? 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 border-rose-400 text-white cursor-pointer active:scale-95 shadow-rose-950/30'
                         : isLocked
                         ? isHeldByMe
-                          ? 'bg-amber-500/15 border-amber-500/60 text-amber-200 cursor-pointer animate-lock-pulse shadow-sm shadow-amber-500/20'
-                          : 'bg-amber-950/20 border-amber-700/40 text-amber-400/80 cursor-not-allowed opacity-80'
-                        : 'bg-slate-900/90 border-slate-800 text-slate-400 cursor-not-allowed'
+                          ? 'bg-amber-500 hover:bg-amber-400 border-amber-300 text-slate-950 cursor-pointer animate-pulse font-bold shadow-amber-500/20'
+                          : 'bg-amber-950/40 border-amber-700/50 text-amber-300 cursor-not-allowed opacity-80'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 cursor-not-allowed'
                     }`}
                   >
-                    {/* Status Badge */}
-                    <div className="flex items-center justify-between w-full">
-                      <span className="text-[10px] font-mono text-slate-400">
-                        {slot.startTime} - {slot.endTime}
-                      </span>
-                      {isAvailable && (
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
-                      )}
-                      {isLocked && (
-                        <span className="flex items-center text-[10px] font-medium text-amber-400">
-                          <Lock className="w-2.5 h-2.5 mr-0.5" />
-                          {isHeldByMe ? 'Your Hold' : 'Held'}
+                    {/* AVAILABLE SLOT (GREEN) */}
+                    {isAvailable && (
+                      <div className="flex flex-col items-center justify-center text-center w-full leading-tight">
+                        <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-100 opacity-90">
+                          {slot.startTime}
                         </span>
-                      )}
-                      {isConfirmed && (
-                        <CheckCircle2 className="w-3 h-3 text-brand-500" />
-                      )}
-                    </div>
+                        <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-white mt-0.5">
+                          {isMobileView ? 'Avail' : 'Available'}
+                        </span>
+                      </div>
+                    )}
 
-                    {/* Slot Info Content */}
-                    <div className="text-xs truncate">
-                      {isAvailable && (
-                        <span className="text-emerald-400/90 font-medium text-[11px]">
-                          Available
+                    {/* CONFIRMED / BOOKED SLOT (RED) */}
+                    {isConfirmed && (
+                      <div className="flex flex-col items-center justify-center text-center w-full px-0.5 leading-tight">
+                        <span className="text-[9px] sm:text-[10px] font-mono font-semibold text-rose-100 opacity-90">
+                          {slot.startTime}
                         </span>
-                      )}
-                      {isLocked && (
-                        <div className="flex items-center space-x-1 text-[11px] font-semibold text-amber-300 truncate">
-                          <User className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span className="truncate">{slot.lockInfo?.lockedByAdminName || 'Admin'}</span>
-                        </div>
-                      )}
-                      {isConfirmed && (
-                        <div className="text-[11px] font-medium text-slate-200 truncate flex items-center space-x-1">
-                          <User className="w-2.5 h-2.5 text-slate-500 shrink-0" />
-                          <span className="truncate">{slot.bookingInfo?.contactName}</span>
-                        </div>
-                      )}
-                    </div>
+                        <span className="text-[11px] sm:text-xs font-black text-white truncate max-w-full mt-0.5">
+                          {slot.bookingInfo?.contactName || 'Booked'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* LOCKED / HOLD SLOT (AMBER) */}
+                    {isLocked && (
+                      <div className="flex flex-col items-center justify-center text-center w-full leading-tight">
+                        <span className="text-[9px] sm:text-[10px] font-mono font-bold opacity-80">
+                          {slot.startTime}
+                        </span>
+                        <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider mt-0.5">
+                          {isHeldByMe ? 'Hold' : 'Held'}
+                        </span>
+                      </div>
+                    )}
                   </button>
                 );
               })}

@@ -232,4 +232,56 @@ export class BookingController {
       next(err);
     }
   }
+
+  static async getRecurringSeries(req: Request, res: Response, next: NextFunction) {
+    try {
+      const series = await RecurringBookingService.getRecurringSeries(req.admin?.facilityId);
+      res.json(series);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async cancelRecurringSeries(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const result = await RecurringBookingService.cancelRecurringSeries({
+        seriesId: id,
+        adminId: req.admin!.id,
+        reason
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async updateRecurringPayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { paymentMade, paymentMethod, amountPaid, transactionId, notes } = req.body;
+
+      if (!paymentMethod) {
+        return res.status(400).json({ error: 'Payment method is required (e.g. cash, card, bank_transfer)' });
+      }
+
+      const result = await RecurringBookingService.updateRecurringPayment({
+        seriesId: id,
+        adminId: req.admin!.id,
+        paymentMade: Boolean(paymentMade),
+        paymentMethod,
+        amountPaid: amountPaid ? Number(amountPaid) : undefined,
+        transactionId,
+        notes
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
+

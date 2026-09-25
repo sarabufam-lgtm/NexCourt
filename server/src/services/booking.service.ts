@@ -45,10 +45,11 @@ export class BookingService {
   static async getAvailability(params: { courtTypeId?: string; date: string; facilityId?: string | null }) {
     await this.cleanupExpiredLocks();
 
-    const targetDate = parseISO(params.date);
-    const dayStart = startOfDay(targetDate);
-    const dayEnd = endOfDay(targetDate);
-    const dayOfWeek = targetDate.getDay();
+    const [year, month, day] = params.date.split('-').map(Number);
+    const dayStart = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+    const targetDate = new Date(`${params.date}T12:00:00.000Z`);
+    const dayOfWeek = targetDate.getUTCDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
 
     // 1. Fetch Courts
@@ -92,14 +93,17 @@ export class BookingService {
       timeSlots.push({ startTime: s, endTime: e, label: `${s} - ${e}` });
     }
 
-    // 4. Map Court Matrix
+    // 4. Map Court Matrix with interval intersection
     const matrix = courts.map((court) => {
       const slots = timeSlots.map((slot) => {
+        // Find any booking/lock that overlaps with this slot [slot.startTime, slot.endTime)
         const booking = activeBookings.find(
           (b) =>
             b.courtId === court.id &&
-            b.startTime === slot.startTime &&
-            b.endTime === slot.endTime
+            b.startTime &&
+            b.endTime &&
+            slot.startTime < b.endTime &&
+            slot.endTime > b.startTime
         );
 
         let status: 'AVAILABLE' | 'LOCKED' | 'CONFIRMED' = 'AVAILABLE';
@@ -111,7 +115,10 @@ export class BookingService {
             status = 'CONFIRMED';
             bookingInfo = {
               bookingId: booking.id,
+              customerId: booking.customerId,
               contactName: booking.contactName,
+              contactPhone: booking.contactPhone,
+              contactEmail: booking.contactEmail,
               paymentMade: booking.paymentMade,
               amountDue: Number(booking.amountDue),
               bookingType: booking.bookingType
@@ -156,6 +163,7 @@ export class BookingService {
     };
   }
 
+
   /**
    * Acquire a 5-minute atomic lock on a slot
    */
@@ -163,16 +171,17 @@ export class BookingService {
     const lockDurationMs = env.SLOT_LOCK_TIMEOUT_SECONDS * 1000;
     const now = new Date();
     const lockExpiresAt = new Date(now.getTime() + lockDurationMs);
-    const parsedDate = parseISO(input.bookingDate);
+    const [year, month, day] = input.bookingDate.split('-').map(Number);
+    const parsedDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 
     return await prisma.$transaction(async (tx) => {
-      // Check for active conflicts
+      // Check for active conflicts with any overlapping slot [input.startTime, input.endTime)
       const existing = await tx.bookings.findFirst({
         where: {
           courtId: input.courtId,
           bookingDate: parsedDate,
-          startTime: input.startTime,
-          endTime: input.endTime,
+          startTime: { lt: input.endTime },
+          endTime: { gt: input.startTime },
           OR: [
             { statusId: 2 }, // CONFIRMED
             {
@@ -182,6 +191,7 @@ export class BookingService {
             }
           ]
         },
+
         include: {
           createdByAdmin: { select: { fullName: true } }
         }
@@ -285,6 +295,40 @@ export class BookingService {
         throw { status: 409, message: 'Booking was modified concurrently. Please refresh.' };
       }
 
+      // Upsert customer profile automatically
+      let customerId: string | null = null;
+      if (input.contactPhone && input.contactName) {
+        const cleanPhone = input.contactPhone.trim();
+        const cleanName = input.contactName.trim();
+        const existingCust = await tx.customer.findFirst({
+          where: {
+            phone: cleanPhone,
+            ...(booking.facilityId ? { facilityId: booking.facilityId } : {})
+          }
+        });
+
+        if (existingCust) {
+          const updatedCust = await tx.customer.update({
+            where: { id: existingCust.id },
+            data: {
+              name: cleanName,
+              email: input.contactEmail ? input.contactEmail.trim() : existingCust.email
+            }
+          });
+          customerId = updatedCust.id;
+        } else {
+          const newCust = await tx.customer.create({
+            data: {
+              facilityId: booking.facilityId,
+              name: cleanName,
+              phone: cleanPhone,
+              email: input.contactEmail ? input.contactEmail.trim() : null
+            }
+          });
+          customerId = newCust.id;
+        }
+      }
+
       // Upgrade to CONFIRMED
       const confirmed = await tx.bookings.update({
         where: {
@@ -293,6 +337,7 @@ export class BookingService {
         },
         data: {
           statusId: 2, // CONFIRMED
+          customerId,
           contactName: input.contactName,
           contactPhone: input.contactPhone,
           contactEmail: input.contactEmail,
@@ -306,7 +351,8 @@ export class BookingService {
           version: { increment: 1 }
         },
         include: {
-          court: { include: { courtType: true } }
+          court: { include: { courtType: true } },
+          customer: true
         }
       });
 

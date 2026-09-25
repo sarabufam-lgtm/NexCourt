@@ -110,4 +110,14 @@ export class SocketManager {
     if (!this.io) return;
     this.io.to(`date:${date}`).emit('booking:cancelled', payload);
   }
+
+  static broadcastCustomerUpdated(payload: {
+    customerId: string;
+    name: string;
+    phone: string;
+  }) {
+    if (!this.io) return;
+    this.io.emit('customer:updated', payload);
+  }
 }
+
